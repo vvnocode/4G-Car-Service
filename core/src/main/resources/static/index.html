@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>4G Car Control</title>
+    <script src="https://unpkg.com/vue@2"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body>
+<div id="app">
+    <input type="input" v-model="user" placeholder="请输入用户名">
+    <input type="password" v-model="pwd" placeholder="请输入密码">
+    <button @click="checkPassword">验证密码</button>
+    <div v-if="passwordVerified">
+        <p>密码验证通过，可以控制小车。</p>
+        <p>按下 WASD 键或箭头键控制小车方向。</p>
+        <p>按下空格键刹车。</p>
+        <p>松开键盘进行滑行</p>
+    </div>
+</div>
+
+<script>
+    const app = new Vue({
+        el: '#app',
+        data: {
+            user: '',
+            pwd: '',
+            passwordVerified: false,
+            eventType: '',
+            scale: 0,
+            pressTime: null,
+            intervalId: null
+        },
+        methods: {
+            checkPassword: function () {
+                axios.post('/user/login', {
+                    user: this.user,
+                    pwd: this.pwd
+                })
+                    .then((response) => {
+                        // handle success
+                        console.log(response);
+                        this.passwordVerified = response.data.code === '0' && response.data.data === true;
+                    })
+                    .catch((error) => {
+                        // handle error
+                        console.log(error);
+                        this.passwordVerified = false;
+                    });
+            },
+            keydownHandler: function (e) {
+                if (this.intervalId) {
+                    clearInterval(this.intervalId);
+                }
+                switch (e.key) {
+                    case 'w':
+                    case 'ArrowUp':
+                        this.eventType = 'go';
+                        break;
+                    case 's':
+                    case 'ArrowDown':
+                        this.eventType = 'back';
+                        break;
+                    case 'a':
+                    case 'ArrowLeft':
+                        this.eventType = 'left';
+                        break;
+                    case 'd':
+                    case 'ArrowRight':
+                        this.eventType = 'right';
+                        break;
+                    case ' ':
+                        this.eventType = 'stop';
+                        break;
+                }
+                this.pressTime = Date.now();
+                this.intervalId = setInterval(this.sendData, 200);
+            },
+            keyupHandler: function (e) {
+                clearInterval(this.intervalId);
+                this.eventType = 'racing';
+                this.sendData();
+                this.pressTime = null;
+            },
+            sendData: function () {
+                if (this.eventType !== 'stop' && this.eventType !== 'racing' && this.pressTime) {
+                    const duration = (Date.now() - this.pressTime) / 1000;
+                    this.scale = Math.min(Math.floor(duration / 2 * 100), 100);
+                }
+                const data = {
+                    eventType: this.eventType,
+                    scale: this.eventType === 'stop' || this.eventType === 'racing' ? '' : this.scale.toString()
+                };
+                const ws = new WebSocket('ws://localhost:8080/ws');
+                ws.onopen = function () {
+                    ws.send(JSON.stringify(data));
+                };
+            }
+        },
+        created: function () {
+            window.addEventListener('keydown', this.keydownHandler);
+            window.addEventListener('keyup', this.keyupHandler);
+        },
+        destroyed: function () {
+            window.removeEventListener('keydown', this.keydownHandler);
+            window.removeEventListener('keyup', this.keyupHandler);
+            if (this.intervalId) {
+                clearInterval(this.intervalId);
+            }
+        }
+    });
+</script>
+</body>
+</html>
